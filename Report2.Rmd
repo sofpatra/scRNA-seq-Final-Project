@@ -1,0 +1,173 @@
+---
+title: "Report.Rmd"
+output: html_document
+date: "2025-05-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preprocessing
+What filtering thresholds did you choose and how did you decide on them?
+Upon consulting the original publication, I decided to filter out cells with fewer than 500 expressed genes, cells with fewer than 800 UMIs, and cells with mitochondrial percentage greater than 10% for the sake of reproduction. These are pretty permissive thresholds as they keep in the outliers on the higher end of the expressed genes and UMI distributions which I probably would have filtered out. However, tt makes sense to use consistent filtering threshold across all samples which is another reason I decided to replicate this reasoning from the original publication. 
+
+How many cells / genes are present before and after implementing your filtering thresholds?
+```{r}
+load("qc_summary.RData")
+qc_summary <- rbind(
+  qc_summary,
+  data.frame(
+    Sample = "Total",
+    Cells_Before = sum(qc_summary$Cells_Before, na.rm = TRUE),
+    Genes_Before = sum(qc_summary$Genes_Before, na.rm = TRUE),
+    Cells_After = sum(qc_summary$Cells_After, na.rm = TRUE),
+    Genes_After = sum(qc_summary$Genes_After, na.rm = TRUE)
+  )
+)
+
+qc_summary
+```
+There were a total of 1,032,978 cells and 363,990 genes across all samples before filtering and doublet removal. After filtering there were 526,526 cells and 363,990 genes. The individual sample before and after filtering numbers can be seen in the table above. 
+
+Look in the literature, what are some potential strategies to set thresholds that don’t rely on visual inspection of plots?
+There is MAD to identify outliers in QC metrics like number of genes, UMIs, or percent mitochondrial reads. This method uses Median Absolute Deviation and captures the central distribution while removing statistical outliers.Tools like CellBender which is a deep-learning based tool, automatically identify ambient RNA, empty droplets, and technical artifacts.
+
+## Preprocessing Figures
+
+### Counts per sample
+```{r echo=FALSE}
+knitr::include_graphics("outputs/preprocessing2.png")
+knitr::include_graphics("outputs/preprocessing3.png")
+knitr::include_graphics("outputs/preprocessing4.png")
+knitr::include_graphics("outputs/preprocessing5.png")
+knitr::include_graphics("outputs/preprocessing6.png")
+knitr::include_graphics("outputs/preprocessing7.png")
+knitr::include_graphics("outputs/preprocessing8.png")
+```
+### Integrated Violin
+```{r echo=FALSE}
+knitr::include_graphics("outputs/preprocessing9.png")
+
+```
+### Doublet Detection 
+```{r echo=FALSE}
+knitr::include_graphics("outputs/doubleddetection1.png")
+
+```
+
+##Normalization 
+I am using Seurat's default global-scaling normalization method, which normalizes the gene expression measurements for each cell by the total expression, multiplies by a scale factor (10,000 by default), and then log-transforms the result. This procedure helps account for differences in sequencing depth across cells.
+
+## Feature Selection
+Seurat "vst" method was used  with standard options which selects the top 2,000 highly variable features 
+So for my downstream analysis, I am including 2000 highly variable genes and excluding (28992 - 2000) genes. For a dataset this size, choosing 2000 highly variable features is reasonable. Seurat’s default method doesn’t use an absolute threshold (like a fixed variance value). It ranks all genes by their standardized variance (after accounting for mean expression), and then selects the top n. In my case, I went with Seurats standard top n of 2000.
+
+### Feature Selection Plot 
+```{r echo=FALSE}
+knitr::include_graphics("outputs/variablefeatureplot.png")
+
+```
+## PCA
+Based on the elbow plot below I decided to go with 20 PCs for the downstream analysis. 
+### PCA Figures
+```{r echo=FALSE}
+knitr::include_graphics("outputs/elbow.png")
+```
+
+
+## Clustering and Visualization 
+
+I used the standard Seurat settings to Find Neighbors and Find Clusters. I used 20 PCS and a resolution of 0.5 to get THIS MANY clusters. 
+How many cells come from each sample individually? How many total cells present in the entire dataset?
+Based on the UMAP plots I created, I decided that integration is needed. When labeling by sample ID, the data was clustering on sample and so not well integrated. It made sense that the data was clustering a lot on type but for sample the data should not have been splitting on it. 
+
+###Clustering and Visualization plots
+```{r echo=FALSE}
+knitr::include_graphics("outputs/unintegratedumap1.png")
+knitr::include_graphics("outputs/unintegratedumap2.png")
+knitr::include_graphics("outputs/unintegratedumap3.png")
+```
+
+## Integration 
+I used Harmony to perform the integration. After running the UMAP again, I saw that though the sample still drove some of the separation there was a lot more overlap which made me feel better about the biological significance of the clusters and their annotations going forward. 
+
+###Integration Plots 
+```{r echo=FALSE}
+knitr::include_graphics("outputs/integratedumap1.png")
+knitr::include_graphics("outputs/integratedumap2.png")
+knitr::include_graphics("outputs/integratedumap3.png")
+```
+
+## Marker Gene Analysis 
+Briefly describe the method performed to identify marker genes. Discuss a few advantages and disadvantages of the method used to perform marker gene analysis.
+
+I used Seurats FindAllMarkers to indentify marker genes. The function identifies marker genes by performing differential expression testing between each cluster and all other cells, typically using the Wilcoxon rank-sum test by default.The advantage of this method is that it doesnt assume normality but a disadvantage is that it is computationally intensive and is sensitive to clustering quality. 
+
+###Marker Gene Analysis Figures 
+```{r echo=FALSE}
+load("top_5_markers.RData")
+print(top_5_markers)
+```
+
+
+## Automatic Annotation of Cell Labels
+I used SingleR to perform do automatic annotation of cell labels.  The algorithm uses reference transcriptomic datasets of pure cell types to infer the cell origin. Based on the figure below most of the cell identities appear to be Hepatocytes and erythroblasts which are cell types found in the liver. This makes sense as the original publication is about identifying tumor cell populations in the hepatoblastoma environment.  
+
+Citation: Aran D, Looney AP, Liu L, Wu E, Fong V, Hsu A, Chak S, Naikawadi RP, Wolters PJ, Abate AR, Butte AJ, Bhattacharya M (2019). “Reference-based analysis of lung single-cell sequencing reveals a transitional profibrotic macrophage.” Nat. Immunol., 20, 163-172. doi:10.1038/s41590-018-0276-y.
+
+
+### Automatic Annotation of Cell Labels Figures 
+```{r echo=FALSE}
+knitr::include_graphics("outputs/singleRlabels.png")
+
+```
+## Manual Gene Annotation 
+Sources 
+0:Uhlén M et al., Tissue-based map of the human proteome. Science (2015) PubMed: 25613900 DOI: 10.1126/science.1260419
+1: AFP Sauzay, Chloé, et al. "Alpha-foetoprotein (AFP): A multi-purpose marker in hepatocellular carcinoma." Clinica chimica acta 463 (2016): 39-44.
+2: CYP2C8 Uhlén M et al., Tissue-based map of the human proteome. Science (2015) PubMed: 25613900 DOI: 10.1126/science.1260419
+3: GCP5 Bosworth AP, Contreras M, Sancho L, Salas IH, Paumier A, Novak SW, Manor U, Allen NJ. Astrocyte glypican 5 regulates synapse maturation and stabilization. Cell Rep. 2025 Mar 25;44(3):115374. doi: 10.1016/j.celrep.2025.115374. Epub 2025 Mar 5. PMID: 40048429; PMCID: PMC12013928.
+4: RTN4RL1 Uhlén M et al., Tissue-based map of the human proteome. Science (2015) PubMed: 25613900 DOI: 10.1126/science.1260419
+5: C2orf48 IQGAP3 CDC45 Uhlén M et al., Tissue-based map of the human proteome. Science (2015) PubMed: 25613900 DOI: 10.1126/science.1260419
+6: DTX4 Wang, Zonggui, et al. "E3 ubiquitin ligase DTX4 is required for adipogenic differentiation in 3T3-L1 preadipocytes cell line." Biochemical and Biophysical Research Communications 492.3 (2017): 419-424.
+7: PLD5 Uhlén M et al., Tissue-based map of the human proteome. Science (2015) PubMed: 25613900 DOI: 10.1126/science.1260419
+8: NOTCH4 Lai, Peng-Yeh, Chong-Bin Tsai, and Min-Jen Tseng. "Active form Notch4 promotes the proliferation and differentiation of 3T3-L1 preadipocytes." Biochemical and biophysical research communications 430.3 (2013): 1132-1139.
+9: FGD2 Huber, Christoph, et al. "FGD2, a CDC42-specific exchange factor expressed by antigen-presenting cells, localizes to early endosomes and active membrane ruffles." Journal of Biological Chemistry 283.49 (2008): 34002-34012.
+10:PLA2G5 Uhlén M et al., Tissue-based map of the human proteome. Science (2015) PubMed: 25613900 DOI: 10.1126/science.1260419
+11: CD247 Eldor, Roy, et al. "CD247, a Novel T Cell–Derived Diagnostic and Prognostic Biomarker for Detecting Disease Progression and Severity in Patients With Type 2 Diabetes." Diabetes care 38.1 (2015): 113-118.
+12:Caubit, Xavier, et al. "TSHZ3 deletion causes an autism syndrome and defects in cortical projection neurons." Nature genetics 48.11 (2016): 1359-1369.
+
+My strategy for naming the clusters was starting with the Human Protein Atlas which is cited for several of the clusters above. I did a search for each of the five top genes in the cluster in the Human Protein Atlas and specifically looked for cell type expression cluster and tissue specificity in the search. If there was a hit for the gene (not all genes were found) and some some enrichement in a specific cell type or tissue, I did a second search of the gene in PubMed to confirm if the two terms appeared together. I then went through the rest of the two 5 genes in order to get a sense of a consensus. If I were doing this for a publication I would probably cite a paper for each gene that I searched up which I did not do in this case - I either cited the Human Protein Atlas or a publication with the one of the genes. 
+
+
+### Manual Cluster Labeling Figures 
+
+```{r echo=FALSE}
+knitr::include_graphics("outputs/ridgeplot1.png")
+knitr::include_graphics("outputs/ridgeplot2.png")
+knitr::include_graphics("outputs/manuallyannotated.png")
+```
+
+
+### Replicate Figures 
+
+Below is Figure 3B replicated. This figure highlights marker genes used to identify the common cell population in liver and tumor samples. Although the shapes of our UMAPs differ - the general down regulation and upregulation of the markers across the plot between the publication and my reproduction of the figure is somewhat consistent. 
+
+
+```{r echo=FALSE}
+knitr::include_graphics("marker_umap.png")
+```
+Below is Figure 4A replicated 
+```{r echo=FALSE}
+knitr::include_graphics("outputs/regression1.png")
+knitr::include_graphics("outputs/regression2.png")
+knitr::include_graphics("outputs/regression3.png")
+```
+
+
+This figure plots mean normalized expression values across the three types of cells that are in this analysis: background hepatocytes, tumor cells from primary hepatoblastoma (HB), and tumor cells from patient-derived xenograft (PDX) models. This involved, mean-averaging gene expression per cell type, normalizing to remove baseline shifts, comparing expression trends across types and then quantifying the correlation with R2.The R squared values between the publication and my findings here are different but for PDX tumor cells and tumor cells the highest correlation remains with the published R squared at 0.902 and mine at 0.899 which is reassuring.
+
+
+## Additional Analysis 
+I performed Pseudotime analysis using Monocle3 to infer the transcriptional trajectory from background hepatocytes to tumor and PDX-derived cells. This approach can model how cellular identities transition over time and assess whether PDX cells faithfully recapitulate the progression observed in primary tumors. Additionally, by ordering cells along this trajectory it may be possible to identify regulated genes and potential regulators of tumor transformation.
